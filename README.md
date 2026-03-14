@@ -1,4 +1,4 @@
-# Popsicle_Kernel: Xiaomi 17 (Popsicle) 自动构建项目 🚀
+# Popsicle_Kernel: Xiaomi 17 Pro Max (Popsicle) 自动构建项目 🚀
 
 ![Kernel Build Status](https://img.shields.io/github/actions/workflow/status/wjx-wp/Popsicle_Kernel/build.yml?branch=popsicle-w-oss&label=Build%20Status&style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Qualcomm%20SM8850-orange?style=for-the-badge)
