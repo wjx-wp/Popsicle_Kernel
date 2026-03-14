@@ -2,154 +2,63 @@ name: Build Popsicle Kernel with SukiSU + SUSFS
 
 on:
   workflow_dispatch:
-    inputs:
-      BUILD_TYPE:
-        description: 'Normal or Bypass'
-        required: true
-        default: 'Normal'
-        type: choice
-        options: [Normal, Bypass]
 
 jobs:
-  build:
+  inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
 
     steps:
-    - name: Maximize disk space
-      uses: easimon/maximize-build-space@master
-      with:
-        swap-size-mb: 8192
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-
-    - name: Install dependencies
+    - name: Clone kernel source
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git curl python3 python3-pip \
-          bc bison flex libssl-dev libelf-dev libncurses-dev \
-          make gcc clang llvm lld binutils-aarch64-linux-gnu \
-          zip unzip cpio kmod
-
-    - name: Clone kernel sources
-      run: |
-        mkdir -p ~/workspace && cd ~/workspace
-
-        # 1. 主内核源码
-        echo ">>> Cloning Xiaomi_Kernel_OpenSource..."
         git clone --depth=1 -b popsicle-w-oss \
           https://github.com/MiCode/Xiaomi_Kernel_OpenSource \
-          Xiaomi_Kernel_OpenSource
+          ~/kernel
+        echo "Clone done."
 
-        # 2. 读取 build_with_bazel.py 里依赖的其他仓库
-        # 小米 Kleaf 构建需要平级的 tools/ 和 msm-kernel/ 目录
-        echo ">>> Cloning kernel/build (tools/bazel)..."
-        git clone --depth=1 \
-          https://android.googlesource.com/kernel/build \
-          build
-
-        # 创建 tools 软链接（Kleaf 约定）
-        ln -sf ~/workspace/build/kleaf/bazel.sh ~/workspace/tools 2>/dev/null || true
-        mkdir -p ~/workspace/tools
-        # 下载 Bazel 到 tools/
-        curl -Lo ~/workspace/tools/bazel \
-          https://github.com/bazelbuild/bazel/releases/download/7.4.1/bazel-7.4.1-linux-x86_64
-        chmod +x ~/workspace/tools/bazel
-
-        echo ">>> Done cloning."
-
-    - name: Inspect repo structure
+    - name: Print repo structure
       run: |
-        echo "=== Workspace root ==="
-        ls ~/workspace/
+        cd ~/kernel
 
-        echo "=== Xiaomi_Kernel_OpenSource root ==="
-        ls ~/workspace/Xiaomi_Kernel_OpenSource/
+        echo "====== ROOT FILES ======"
+        ls -la
 
-        echo "=== Looking for defconfig ==="
-        find ~/workspace/Xiaomi_Kernel_OpenSource -name "*popsicle*defconfig" 2>/dev/null || echo "No popsicle defconfig found"
-        find ~/workspace/Xiaomi_Kernel_OpenSource -name "*defconfig" | head -20
+        echo ""
+        echo "====== build_with_bazel.py ======"
+        cat build_with_bazel.py 2>/dev/null || echo "NOT FOUND"
 
-        echo "=== Looking for BUILD.bazel ==="
-        find ~/workspace/Xiaomi_Kernel_OpenSource -name "BUILD.bazel" | head -5
+        echo ""
+        echo "====== WORKSPACE / MODULE.bazel ======"
+        cat WORKSPACE 2>/dev/null || cat MODULE.bazel 2>/dev/null || echo "NOT FOUND"
 
-        echo "=== build_with_bazel.py exists? ==="
-        ls ~/workspace/Xiaomi_Kernel_OpenSource/build_with_bazel.py || echo "Not found"
+        echo ""
+        echo "====== TOP-LEVEL DIRECTORIES ======"
+        find . -maxdepth 1 -type d | sort
 
-        echo "=== msm_platforms.bzl exists? ==="
-        ls ~/workspace/Xiaomi_Kernel_OpenSource/msm_platforms.bzl || echo "Not found"
+        echo ""
+        echo "====== arch/arm64/configs/ ======"
+        ls arch/arm64/configs/ 2>/dev/null | grep -i "popsicle\|gki\|sm8850\|defconfig" || echo "NOT FOUND"
 
-        echo "=== drivers/ location ==="
-        find ~/workspace/Xiaomi_Kernel_OpenSource -maxdepth 3 -name "Makefile" | grep drivers | head -5
+        echo ""
+        echo "====== ALL DEFCONFIGS ======"
+        find . -name "*defconfig*" | sort
 
-    - name: Integrate SukiSU + SUSFS
-      run: |
-        cd ~/workspace/Xiaomi_Kernel_OpenSource
+        echo ""
+        echo "====== drivers/Makefile exists? ======"
+        ls drivers/Makefile 2>/dev/null || echo "NOT FOUND"
 
-        echo ">>> Integrating SukiSU..."
-        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" \
-          | bash -s main
+        echo ""
+        echo "====== BUILD.bazel files (top 10) ======"
+        find . -name "BUILD.bazel" | head -10
 
-        # 手动 apply SUSFS patch（针对 android16-6.12）
-        echo ">>> Applying SUSFS patch..."
-        # 找 patch 文件位置
-        PATCH_FILE=$(find ~/workspace -name "50_add_susfs_in_kernel*.patch" 2>/dev/null | head -1)
-        if [ -n "$PATCH_FILE" ]; then
-          echo "Found patch: $PATCH_FILE"
-          patch -p1 < "$PATCH_FILE" || echo "Patch apply had conflicts, check manually"
-        else
-          echo "No patch file found from SukiSU setup, checking KernelSU dir..."
-          # SukiSU 可能已经处理了 SUSFS，检查一下
-          find ~/workspace -name "*.patch" | head -10
-        fi
+        echo ""
+        echo "====== msm_platforms.bzl ======"
+        cat msm_platforms.bzl 2>/dev/null | head -50 || echo "NOT FOUND"
 
-    - name: Build kernel
-      run: |
-        cd ~/workspace/Xiaomi_Kernel_OpenSource
-
-        echo "=== Attempting build_with_bazel.py ==="
-        python3 build_with_bazel.py -t popsicle gki 2>&1 | tee ~/build.log
-        BUILD_EXIT=${PIPESTATUS[0]}
-        echo "build_with_bazel.py exit code: $BUILD_EXIT"
-
-        echo "=== Last 50 lines of build log ==="
-        tail -50 ~/build.log
-
-    - name: Find build artifacts
-      if: always()
-      run: |
-        echo "=== Searching for Image ==="
-        find ~/workspace -name "Image" -o -name "Image.gz" -o -name "Image.lz4" 2>/dev/null
-        echo "=== Searching for boot.img ==="
-        find ~/workspace -name "boot.img" -o -name "init_boot.img" 2>/dev/null
-        echo "=== dist/ contents ==="
-        find ~/workspace -name "dist" -type d 2>/dev/null | xargs ls 2>/dev/null || echo "No dist dir"
-
-    - name: Package with AnyKernel3
-      run: |
-        KERNEL_IMG=$(find ~/workspace -name "Image" 2>/dev/null | grep -v "\.o$" | head -1)
-        if [ -z "$KERNEL_IMG" ]; then
-          KERNEL_IMG=$(find ~/workspace -name "Image.gz" 2>/dev/null | head -1)
-        fi
-        if [ -z "$KERNEL_IMG" ]; then
-          echo "ERROR: No kernel image found!"
-          exit 1
-        fi
-        echo "Found kernel: $KERNEL_IMG"
-
-        git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ~/AnyKernel3
-        cp "$KERNEL_IMG" ~/AnyKernel3/
-        cd ~/AnyKernel3
-        zip -r9 ~/popsicle-SukiSU-SUSFS-${{ github.run_number }}.zip . -x '*.git*'
-        echo "Package created."
-
-    - name: Upload artifacts
+    - name: Upload log
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: popsicle-build-${{ github.run_number }}
-        path: |
-          ~/popsicle-SukiSU-SUSFS-*.zip
-          ~/build.log
-        retention-days: 7
+        name: repo-structure
+        path: /home/runner/kernel/build_with_bazel.py
+        retention-days: 3
