@@ -59,26 +59,23 @@ jobs:
         curl -fsSL -o tools/bazel \
           "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-linux-x86_64"
         chmod +x tools/bazel
-        tools/bazel --version
+        ./tools/bazel --version
 
         echo ">>> Creating WORKSPACE at workspace root..."
-        # build_with_bazel.py 把 workspace 定位到上一级目录 (~/workspace/)
-        # Bazel 需要在有 WORKSPACE 的目录里运行
+        # 复制小米配置到逻辑根目录
         cp Xiaomi_Kernel_OpenSource/bazel.WORKSPACE WORKSPACE
 
-        # Bazel 7.x 同时需要 MODULE.bazel
-        cat > MODULE.bazel << 'EOF'
-module(name = "msm_kernel", version = "0")
-EOF
+        # 使用 printf 避免 EOF 缩进导致的 YAML 解析错误 (Line 71 修复)
+        printf 'module(name = "msm_kernel", version = "0")\n' > MODULE.bazel
 
-        # 把 build/kernel/kleaf 里的 MODULE.bazel 内容合并进来（如果有）
+        # 合并 MODULE.bazel 内容
         if [ -f build/kernel/kleaf/MODULE.bazel ]; then
           echo ">>> Merging kleaf MODULE.bazel..."
           cat build/kernel/kleaf/MODULE.bazel >> MODULE.bazel
         fi
 
         echo ">>> Final workspace structure:"
-        ls ~/workspace/
+        ls -F ~/workspace/
 
     - name: Integrate SukiSU + SUSFS
       run: |
