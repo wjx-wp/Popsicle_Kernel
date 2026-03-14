@@ -1,0 +1,79 @@
+name: Build Popsicle Kernel with SukiSU + SUSFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      BUILD_TYPE:
+        description: 'Normal or Bypass'
+        required: true
+        default: 'Normal'
+        type: choice
+        options: [Normal, Bypass]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+    - name: Maximize disk space
+      uses: easimon/maximize-build-space@master
+      with:
+        swap-size-mb: 8192
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git curl python3 python3-pip \
+          bc bison flex libssl-dev libelf-dev libncurses-dev \
+          make gcc clang llvm lld binutils-aarch64-linux-gnu \
+          zip unzip repo
+
+    - name: Set up repo and clone kernel sources
+      run: |
+        mkdir -p ~/kernel && cd ~/kernel
+        # Clone 主内核源码
+        git clone --depth=1 -b popsicle-w-oss \
+          https://github.com/${{ github.repository_owner }}/Xiaomi_Kernel_OpenSource \
+          Xiaomi_Kernel_OpenSource
+        # 这里需要根据实际情况补充 msm-kernel 等依赖仓库
+        # 先尝试独立编译，看小米是否在单仓库内提供了完整构建
+
+    - name: Integrate SukiSU + SUSFS
+      run: |
+        cd ~/kernel/Xiaomi_Kernel_OpenSource
+        # 集成 SukiSU（含 SUSFS）
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" \
+          | bash -s susfs-main
+
+    - name: Build kernel
+      run: |
+        cd ~/kernel/Xiaomi_Kernel_OpenSource
+        # 尝试 Kleaf 构建
+        tools/bazel run //msm-kernel:popsicle_gki_dist \
+          -- --dist_dir=dist 2>&1 | tee build.log || true
+        # 如果 Kleaf 失败，回退到 build_with_bazel.py
+        if [ ! -f dist/Image ]; then
+          python3 build_with_bazel.py -t popsicle gki 2>&1 | tee build2.log
+        fi
+
+    - name: Package with AnyKernel3
+      run: |
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel3
+        # 找到编译产物
+        KERNEL_IMG=$(find ~/kernel -name "Image" -o -name "Image.gz" 2>/dev/null | head -1)
+        cp "$KERNEL_IMG" AnyKernel3/
+        cd AnyKernel3
+        zip -r9 ../popsicle-SukiSU-SUSFS-${{ github.run_number }}.zip . -x '*.git*'
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: popsicle-SukiSU-SUSFS
+        path: |
+          popsicle-SukiSU-SUSFS-*.zip
+          ~/kernel/Xiaomi_Kernel_OpenSource/build*.log
+        retention-days: 7
