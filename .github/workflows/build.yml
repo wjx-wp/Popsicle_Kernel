@@ -1,4 +1,4 @@
-name: Build Popsicle Kernel with SukiSU + SUSFS
+name: Inspect kernel repo structure v2
 
 on:
   workflow_dispatch:
@@ -9,56 +9,35 @@ jobs:
     timeout-minutes: 30
 
     steps:
-    - name: Clone kernel source
+    - name: Clone and inspect
       run: |
+        mkdir -p ~/workspace
+        cd ~/workspace
+
+        # clone soc-repo（你已知的）
         git clone --depth=1 -b popsicle-w-oss \
           https://github.com/MiCode/Xiaomi_Kernel_OpenSource \
-          ~/kernel
-        echo "Clone done."
+          Xiaomi_Kernel_OpenSource
 
-    - name: Print repo structure
-      run: |
-        cd ~/kernel
-
-        echo "====== ROOT FILES ======"
-        ls -la
+        echo "====== build.config.msm.popsicle ======"
+        cat Xiaomi_Kernel_OpenSource/build.config.msm.popsicle
 
         echo ""
-        echo "====== build_with_bazel.py ======"
-        cat build_with_bazel.py 2>/dev/null || echo "NOT FOUND"
+        echo "====== build.config.msm.sun (参考) ======"
+        cat Xiaomi_Kernel_OpenSource/build.config.msm.sun
 
         echo ""
-        echo "====== WORKSPACE / MODULE.bazel ======"
-        cat WORKSPACE 2>/dev/null || cat MODULE.bazel 2>/dev/null || echo "NOT FOUND"
+        echo "====== BUILD.bazel (前100行) ======"
+        head -100 Xiaomi_Kernel_OpenSource/BUILD.bazel
 
         echo ""
-        echo "====== TOP-LEVEL DIRECTORIES ======"
-        find . -maxdepth 1 -type d | sort
+        echo "====== bazel.WORKSPACE ======"
+        cat Xiaomi_Kernel_OpenSource/bazel.WORKSPACE
 
         echo ""
-        echo "====== arch/arm64/configs/ ======"
-        ls arch/arm64/configs/ 2>/dev/null | grep -i "popsicle\|gki\|sm8850\|defconfig" || echo "NOT FOUND"
+        echo "====== build.targets ======"
+        cat Xiaomi_Kernel_OpenSource/build.targets
 
         echo ""
-        echo "====== ALL DEFCONFIGS ======"
-        find . -name "*defconfig*" | sort
-
-        echo ""
-        echo "====== drivers/Makefile exists? ======"
-        ls drivers/Makefile 2>/dev/null || echo "NOT FOUND"
-
-        echo ""
-        echo "====== BUILD.bazel files (top 10) ======"
-        find . -name "BUILD.bazel" | head -10
-
-        echo ""
-        echo "====== msm_platforms.bzl ======"
-        cat msm_platforms.bzl 2>/dev/null | head -50 || echo "NOT FOUND"
-
-    - name: Upload log
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: repo-structure
-        path: /home/runner/kernel/build_with_bazel.py
-        retention-days: 3
+        echo "====== target_variants.bzl ======"
+        cat Xiaomi_Kernel_OpenSource/target_variants.bzl
