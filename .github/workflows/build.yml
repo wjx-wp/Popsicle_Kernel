@@ -16,6 +16,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      DEBIAN_FRONTEND: noninteractive
 
     steps:
     - name: Maximize disk space
@@ -76,53 +78,62 @@ jobs:
 
         echo ">>> Auto-fixing missing modules.bzl stubs..."
         cd ~/workspace/Xiaomi_Kernel_OpenSource
-        python3 - << 'PYEOF'
-        import os, re
-        def find_bzl_imports(filepath):
-            imports = []
-            try:
-                with open(filepath) as f:
-                    for line in f:
-                        m = re.findall(r'load\(["\'](?://[^:]+:)?([^"\']+\.bzl)["\']', line)
-                        imports.extend(m)
-            except: pass
-            return imports
-        root = os.getcwd()
-        visited = set()
-        to_check = []
-        for dirpath, dirnames, filenames in os.walk(root):
-            for f in filenames:
-                if f == 'modules.bzl':
-                    to_check.append(os.path.join(dirpath, f))
-        created = 0
-        skipped = 0
-        while to_check:
-            fpath = to_check.pop()
-            if fpath in visited: continue
-            visited.add(fpath)
-            for imp in find_bzl_imports(fpath):
-                imp_clean = imp.lstrip(':')
-                abs_imp = os.path.normpath(os.path.join(root, imp_clean))
-                # 跳过已存在的路径（无论是文件还是目录）
-                if os.path.exists(abs_imp):
-                    continue
-                parent = os.path.dirname(abs_imp)
-                try:
-                    # 如果父路径是普通文件（私有驱动占位），重命名后转为目录
-                    if os.path.isfile(parent):
-                        os.rename(parent, parent + '.bak')
-                        print(f"Renamed file→bak: {parent}")
-                    os.makedirs(parent, exist_ok=True)
-                    with open(abs_imp, 'w') as stub:
-                        stub.write('# Auto-generated stub\n')
-                    print(f"Created stub: {imp_clean}")
-                    created += 1
-                    to_check.append(abs_imp)
-                except Exception as e:
-                    print(f"Skipping {imp_clean}: {e}")
-                    skipped += 1
-        print(f"Total stubs created: {created}, skipped: {skipped}")
-        PYEOF
+
+        # 将 Python 脚本写入独立文件，彻底规避 YAML heredoc 缩进陷阱
+        cat > /tmp/fix_stubs.py << 'PYEOF'
+import os, re
+
+def find_bzl_imports(filepath):
+    imports = []
+    try:
+        with open(filepath) as f:
+            for line in f:
+                m = re.findall(r'load\(["\'](?://[^:]+:)?([^"\']+\.bzl)["\']', line)
+                imports.extend(m)
+    except Exception:
+        pass
+    return imports
+
+root = os.getcwd()
+visited = set()
+to_check = []
+
+for dirpath, dirnames, filenames in os.walk(root):
+    for f in filenames:
+        if f == 'modules.bzl':
+            to_check.append(os.path.join(dirpath, f))
+
+created = 0
+skipped = 0
+while to_check:
+    fpath = to_check.pop()
+    if fpath in visited:
+        continue
+    visited.add(fpath)
+    for imp in find_bzl_imports(fpath):
+        imp_clean = imp.lstrip(':')
+        abs_imp = os.path.normpath(os.path.join(root, imp_clean))
+        if os.path.exists(abs_imp):
+            continue
+        parent = os.path.dirname(abs_imp)
+        try:
+            # 父路径是普通文件（私有驱动占位）时，重命名后转为目录
+            if os.path.isfile(parent):
+                os.rename(parent, parent + '.bak')
+                print(f"Renamed file->bak: {parent}")
+            os.makedirs(parent, exist_ok=True)
+            with open(abs_imp, 'w') as stub:
+                stub.write('# Auto-generated stub\n')
+            print(f"Created stub: {imp_clean}")
+            created += 1
+            to_check.append(abs_imp)
+        except Exception as e:
+            print(f"Skipping {imp_clean}: {e}")
+            skipped += 1
+
+print(f"Total stubs created: {created}, skipped: {skipped}")
+PYEOF
+        python3 /tmp/fix_stubs.py
 
         echo ">>> Final workspace structure:"
         ls -F ~/workspace/
