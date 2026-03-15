@@ -107,12 +107,11 @@ jobs:
                 if os.path.exists(abs_imp):
                     continue
                 parent = os.path.dirname(abs_imp)
-                # 如果父路径是一个文件（非目录），无法在其下创建子文件，跳过
-                if os.path.isfile(parent):
-                    print(f"Skipping (parent is file): {imp_clean}")
-                    skipped += 1
-                    continue
                 try:
+                    # 如果父路径是普通文件（私有驱动占位），重命名后转为目录
+                    if os.path.isfile(parent):
+                        os.rename(parent, parent + '.bak')
+                        print(f"Renamed file→bak: {parent}")
                     os.makedirs(parent, exist_ok=True)
                     with open(abs_imp, 'w') as stub:
                         stub.write('# Auto-generated stub\n')
