@@ -29,10 +29,11 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update -qq
+        # clang/llvm/lld 由 Kleaf (Bazel) 自动从 AOSP CDN 下载预编译工具链，无需系统安装
         sudo apt-get install -y \
           git curl python3 python3-pip \
-          bc bison flex libssl-dev libelf-dev libncurses-dev \
-          make gcc clang-19 llvm-19 lld-19 \
+          bc bison flex libssl-dev libelf-dev \
+          make gcc \
           binutils-aarch64-linux-gnu \
           zip unzip cpio kmod libpython3-dev \
           openjdk-21-jdk-headless
