@@ -95,22 +95,34 @@ jobs:
                 if f == 'modules.bzl':
                     to_check.append(os.path.join(dirpath, f))
         created = 0
+        skipped = 0
         while to_check:
             fpath = to_check.pop()
             if fpath in visited: continue
             visited.add(fpath)
             for imp in find_bzl_imports(fpath):
-                # 兼容相对路径跳转
                 imp_clean = imp.lstrip(':')
                 abs_imp = os.path.normpath(os.path.join(root, imp_clean))
-                if not os.path.exists(abs_imp):
-                    os.makedirs(os.path.dirname(abs_imp), exist_ok=True)
+                # 跳过已存在的路径（无论是文件还是目录）
+                if os.path.exists(abs_imp):
+                    continue
+                parent = os.path.dirname(abs_imp)
+                # 如果父路径是一个文件（非目录），无法在其下创建子文件，跳过
+                if os.path.isfile(parent):
+                    print(f"Skipping (parent is file): {imp_clean}")
+                    skipped += 1
+                    continue
+                try:
+                    os.makedirs(parent, exist_ok=True)
                     with open(abs_imp, 'w') as stub:
                         stub.write('# Auto-generated stub\n')
-                    print(f"Created stub: {abs_imp}")
+                    print(f"Created stub: {imp_clean}")
                     created += 1
                     to_check.append(abs_imp)
-        print(f"Total stubs created: {created}")
+                except Exception as e:
+                    print(f"Skipping {imp_clean}: {e}")
+                    skipped += 1
+        print(f"Total stubs created: {created}, skipped: {skipped}")
         PYEOF
 
         echo ">>> Final workspace structure:"
