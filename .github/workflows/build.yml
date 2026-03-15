@@ -74,6 +74,57 @@ jobs:
           cat build/kernel/kleaf/MODULE.bazel >> MODULE.bazel
         fi
 
+        echo ">>> Auto-fixing missing modules.bzl stubs..."
+cd ~/workspace/Xiaomi_Kernel_OpenSource
+
+# 扫描所有 modules.bzl 里引用的路径，自动创建缺失的占位文件
+python3 - << 'PYEOF'
+import os, re
+
+def find_bzl_imports(filepath):
+    """从 .bzl 文件中提取 load() 引用的本地路径"""
+    imports = []
+    try:
+        with open(filepath) as f:
+            for line in f:
+                # 匹配 load(":path/to/file.bzl", ...) 或 load("//repo:path/to/file.bzl", ...)
+                m = re.findall(r'load\(["\'](?://[^:]+:)?([^"\']+\.bzl)["\']', line)
+                imports.extend(m)
+    except:
+        pass
+    return imports
+
+root = os.getcwd()
+visited = set()
+to_check = []
+
+# 从 modules.bzl 开始
+for dirpath, dirnames, filenames in os.walk(root):
+    for f in filenames:
+        if f == 'modules.bzl':
+            to_check.append(os.path.join(dirpath, f))
+
+created = 0
+while to_check:
+    fpath = to_check.pop()
+    if fpath in visited:
+        continue
+    visited.add(fpath)
+    
+    for imp in find_bzl_imports(fpath):
+        # 解析相对于 repo root 的路径
+        abs_imp = os.path.join(root, imp)
+        if not os.path.exists(abs_imp):
+            os.makedirs(os.path.dirname(abs_imp), exist_ok=True)
+            with open(abs_imp, 'w') as stub:
+                stub.write('# Auto-generated stub for missing private module\n')
+            print(f"Created stub: {imp}")
+            created += 1
+            to_check.append(abs_imp)
+
+print(f"Total stubs created: {created}")
+PYEOF
+
         echo ">>> Final workspace structure:"
         ls -F ~/workspace/
 
